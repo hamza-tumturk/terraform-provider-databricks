@@ -23,12 +23,31 @@ func (lw *levelWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+func (ic *importContext) allServicesAndListing() (string, string) {
+	services := ""
+	listing := ""
+	for _, ir := range ic.Importables {
+		if !strings.Contains(services, ir.Service) {
+			if len(services) > 0 {
+				services += ","
+			}
+			services += ir.Service
+		}
+		if ir.List != nil && !strings.Contains(listing, ir.Service) {
+			if len(listing) > 0 {
+				listing += ","
+			}
+			listing += ir.Service
+		}
+	}
+	return services, listing
+}
+
 // Run import according to flags
 func Run(args ...string) error {
 	log.SetOutput(&logLevel)
 	c := common.NewClientFromEnvironment()
 	ic := newImportContext(c)
-
 	flags := flag.NewFlagSet("importer", flag.ExitOnError)
 	flags.StringVar(&ic.Module, "module", "",
 		"Terraform module name, that changes are imported. "+
@@ -47,23 +66,7 @@ func Run(args ...string) error {
 	flags.BoolVar(&ic.mounts, "mounts", false, "List DBFS mount points.")
 	flags.BoolVar(&ic.generateDeclaration, "generateProviderDeclaration", false,
 		"Generate Databricks provider declaration (for Terraform >= 0.13).")
-
-	listing := ""
-	services := ""
-	for _, ir := range ic.Importables {
-		if !strings.Contains(services, ir.Service) {
-			if len(services) > 0 {
-				services += ","
-			}
-			services += ir.Service
-		}
-		if ir.List != nil && !strings.Contains(listing, ir.Service) {
-			if len(listing) > 0 {
-				listing += ","
-			}
-			listing += ir.Service
-		}
-	}
+	services, listing := ic.allServicesAndListing()
 	flags.StringVar(&ic.services, "services", services,
 		"Comma-separated list of services to import. By default all services are imported.")
 	flags.StringVar(&ic.listing, "listing", listing,
