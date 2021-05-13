@@ -77,6 +77,48 @@ func TestResourcePermissionsRead(t *testing.T) {
 	assert.Equal(t, "CAN_READ", firstElem["permission_level"])
 }
 
+func TestResourcePermissionsRead_SQLA_Asset(t *testing.T) {
+	d, err := qa.ResourceFixture{
+		Fixtures: []qa.HTTPFixture{
+			{
+				Method:   http.MethodGet,
+				Resource: "/api/2.0/preview/sql/permissions/dashboards/abc",
+				Response: ObjectACL{
+					ObjectID:   "/sql/dashboards/abc",
+					ObjectType: "dashboard",
+					AccessControlList: []AccessControl{
+						{
+							UserName:        TestingUser,
+							PermissionLevel: "CAN_READ",
+						},
+						{
+							UserName:        TestingAdminUser,
+							PermissionLevel: "CAN_MANAGE",
+						},
+					},
+				},
+			},
+			{
+				Method:   http.MethodGet,
+				Resource: "/api/2.0/preview/scim/v2/Me",
+				Response: identity.ScimUser{
+					UserName: TestingAdminUser,
+				},
+			},
+		},
+		Resource: ResourcePermissions(),
+		Read:     true,
+		New:      true,
+		ID:       "/sql/dashboards/abc",
+	}.Apply(t)
+	assert.NoError(t, err, err)
+	assert.Equal(t, "/sql/dashboards/abc", d.Id())
+	ac := d.Get("access_control").(*schema.Set)
+	require.Equal(t, 1, len(ac.List()))
+	firstElem := ac.List()[0].(map[string]interface{})
+	assert.Equal(t, TestingUser, firstElem["user_name"])
+	assert.Equal(t, "CAN_READ", firstElem["permission_level"])
+}
 func TestResourcePermissionsRead_NotFound(t *testing.T) {
 	qa.ResourceFixture{
 		Fixtures: []qa.HTTPFixture{
@@ -270,15 +312,14 @@ func TestResourcePermissionsCreate_invalid(t *testing.T) {
 }
 
 func TestResourcePermissionsCreate_no_access_control(t *testing.T) {
-	_, err := qa.ResourceFixture{
+	qa.ResourceFixture{
 		Fixtures: []qa.HTTPFixture{},
 		Resource: ResourcePermissions(),
 		Create:   true,
 		State: map[string]interface{}{
 			"cluster_id": "abc",
 		},
-	}.Apply(t)
-	qa.AssertErrorStartsWith(t, err, "Invalid config supplied. [access_control] Required attribute is not set")
+	}.ExpectError(t, "invalid config supplied. [access_control] Missing required argument")
 }
 
 func TestResourcePermissionsCreate_conflicting_fields(t *testing.T) {
@@ -297,7 +338,7 @@ func TestResourcePermissionsCreate_conflicting_fields(t *testing.T) {
 			},
 		},
 	}.Apply(t)
-	qa.AssertErrorStartsWith(t, err, "Invalid config supplied. cluster_id: conflicts with notebook_path. notebook_path: conflicts with cluster_id")
+	qa.AssertErrorStartsWith(t, err, "invalid config supplied. cluster_id: conflicts with notebook_path. notebook_path: conflicts with cluster_id")
 }
 
 func TestResourcePermissionsCreate_AdminsThrowError(t *testing.T) {
@@ -313,7 +354,7 @@ func TestResourcePermissionsCreate_AdminsThrowError(t *testing.T) {
 		}
 		`,
 	}.Apply(t)
-	assert.EqualError(t, err, "Invalid config supplied. [access_control] "+
+	assert.EqualError(t, err, "invalid config supplied. [access_control] "+
 		"It is not possible to restrict any permissions from `admins`.")
 }
 
@@ -371,6 +412,72 @@ func TestResourcePermissionsCreate(t *testing.T) {
 		Resource: ResourcePermissions(),
 		State: map[string]interface{}{
 			"cluster_id": "abc",
+			"access_control": []interface{}{
+				map[string]interface{}{
+					"user_name":        TestingUser,
+					"permission_level": "CAN_READ",
+				},
+			},
+		},
+		Create: true,
+	}.Apply(t)
+	assert.NoError(t, err, err)
+	ac := d.Get("access_control").(*schema.Set)
+	require.Equal(t, 1, len(ac.List()))
+	firstElem := ac.List()[0].(map[string]interface{})
+	assert.Equal(t, TestingUser, firstElem["user_name"])
+	assert.Equal(t, "CAN_READ", firstElem["permission_level"])
+}
+
+func TestResourcePermissionsCreate_SQLA_Asset(t *testing.T) {
+	d, err := qa.ResourceFixture{
+		Fixtures: []qa.HTTPFixture{
+			{
+				Method:   http.MethodPost,
+				Resource: "/api/2.0/preview/sql/permissions/dashboards/abc",
+				ExpectedRequest: AccessControlChangeList{
+					AccessControlList: []AccessControlChange{
+						{
+							UserName:        TestingUser,
+							PermissionLevel: "CAN_READ",
+						},
+						{
+							UserName:        TestingAdminUser,
+							PermissionLevel: "CAN_MANAGE",
+						},
+					},
+				},
+			},
+			{
+				Method:   http.MethodGet,
+				Resource: "/api/2.0/preview/sql/permissions/dashboards/abc",
+				Response: ObjectACL{
+					ObjectID:   "/sql/dashboards/abc",
+					ObjectType: "dashboard",
+					AccessControlList: []AccessControl{
+						{
+							UserName:        TestingUser,
+							PermissionLevel: "CAN_READ",
+						},
+						{
+							UserName:        TestingAdminUser,
+							PermissionLevel: "CAN_MANAGE",
+						},
+					},
+				},
+			},
+			{
+				Method:       http.MethodGet,
+				ReuseRequest: true,
+				Resource:     "/api/2.0/preview/scim/v2/Me",
+				Response: identity.ScimUser{
+					UserName: TestingAdminUser,
+				},
+			},
+		},
+		Resource: ResourcePermissions(),
+		State: map[string]interface{}{
+			"sql_dashboard_id": "abc",
 			"access_control": []interface{}{
 				map[string]interface{}{
 					"user_name":        TestingUser,
@@ -609,7 +716,7 @@ func TestResourcePermissionsUpdate(t *testing.T) {
 func permissionsTestHelper(t *testing.T,
 	cb func(permissionsAPI PermissionsAPI, user, group string,
 		ef func(string) PermissionsEntity)) {
-	if "" == os.Getenv("CLOUD_ENV") {
+	if os.Getenv("CLOUD_ENV") == "" {
 		t.Skip("Acceptance tests skipped unless env 'CLOUD_ENV' is set")
 	}
 	randomName := acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)

@@ -4,14 +4,14 @@ page_title: "End to end workspace management"
 
 # End to end workspace management
 
-Once you have the workspace setup on [Azure](azure-workspace.md) or [AWS](aws-workspace.md), you have to start managing resources within your workpsace. The following configuration blocks initializes ths most common variables, [databricks_spark_version](../data-sources/spark_version.md), [databricks_node_type](../data-sources/node_type.md), and [databricks_current_user](../data-sources/current_user.md).
+Once you have the workspace setup on [Azure](azure-workspace.md) or [AWS](aws-workspace.md), you have to start managing resources within your workspace. The following configuration blocks initializes ths most common variables, [databricks_spark_version](../data-sources/spark_version.md), [databricks_node_type](../data-sources/node_type.md), and [databricks_current_user](../data-sources/current_user.md).
 
 ```hcl
 terraform {
   required_providers {
     databricks = {
       source  = "databrickslabs/databricks"
-      version = "0.3.0"
+      version = "0.3.4"
     }
   }
 }
@@ -226,31 +226,5 @@ resource "databricks_ip_access_list" "only_me" {
   list_type = "ALLOW"
   ip_addresses = ["${data.http.my.body}/32"]
   depends_on = [databricks_workspace_conf.this]
-}
-```
-
-## Part 5: SQL Analytics
-
-You can configure [databricks_sql_endpoint](../resources/sql_endpoint.md) and access to it:
-
-```hcl
-resource "databricks_sql_endpoint" "this" {
-  name = "Endpoint of ${data.databricks_current_user.me.alphanumeric}"
-  cluster_size = "Small"
-  max_num_clusters = 1
-}
-
-resource "databricks_permissions" "endpoint_usage" {
-  sql_endpoint_id = databricks_sql_endpoint.this.id
-
-  access_control {
-    group_name       = databricks_group.spectators.display_name
-    permission_level = "CAN_USE"
-  }
-
-  access_control {
-    user_name        = databricks_user.dummy.user_name
-    permission_level = "CAN_MANAGE"
-  }
 }
 ```

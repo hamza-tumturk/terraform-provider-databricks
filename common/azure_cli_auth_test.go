@@ -121,12 +121,12 @@ func TestInternalRefresh_ExitError(t *testing.T) {
 		lock: &sync.RWMutex{},
 	}
 	err := rct.refreshInternal("a")
-	assert.EqualError(t, err, "Cannot get access token: This is just a failing script.\n")
+	assert.EqualError(t, err, "cannot get access token: This is just a failing script.\n")
 }
 
 func TestInternalRefresh_OtherError(t *testing.T) {
 	defer CleanupEnvironment()()
-	os.Setenv("PATH", "whatever:/bin")
+	os.Setenv("PATH", "whatever")
 
 	rct := refreshableCliToken{
 		token: &adal.Token{
@@ -135,7 +135,7 @@ func TestInternalRefresh_OtherError(t *testing.T) {
 		lock: &sync.RWMutex{},
 	}
 	err := rct.refreshInternal("a")
-	assert.EqualError(t, err, "Cannot get access token: exec: \"az\": executable file not found in $PATH")
+	assert.EqualError(t, err, "cannot get access token: exec: \"az\": executable file not found in $PATH")
 }
 
 func TestInternalRefresh_Corrupt(t *testing.T) {
@@ -226,7 +226,7 @@ func TestConfigureWithAzureCLI_Error(t *testing.T) {
 
 func TestConfigureWithAzureCLI_NotInstalled(t *testing.T) {
 	defer CleanupEnvironment()()
-	os.Setenv("PATH", "whatever:/bin")
+	os.Setenv("PATH", "whatever")
 
 	// token without expiry in this case
 	client, server := singleRequestServer(t, "POST", "/api/2.0/token/create", `{
@@ -239,16 +239,16 @@ func TestConfigureWithAzureCLI_NotInstalled(t *testing.T) {
 
 	_, err := client.AzureAuth.configureWithAzureCLI()
 	require.Error(t, err)
-	assert.True(t, strings.HasPrefix(err.Error(), "Most likely Azure CLI is not installed"),
+	assert.True(t, strings.HasPrefix(err.Error(), "most likely Azure CLI is not installed"),
 		"Actual message: %s", err.Error())
 }
 
 func TestCliAuthorizer_Error(t *testing.T) {
 	defer CleanupEnvironment()()
-	os.Setenv("PATH", "whatever:/bin")
+	os.Setenv("PATH", "whatever")
 	aa := AzureAuth{}
 	_, err := aa.cliAuthorizer("x")
 	require.Error(t, err)
-	assert.True(t, strings.HasPrefix(err.Error(), `Cannot get access token: exec: "az"`),
+	assert.True(t, strings.HasPrefix(err.Error(), `cannot get access token: exec: "az"`),
 		"Actual message: %s", err.Error())
 }

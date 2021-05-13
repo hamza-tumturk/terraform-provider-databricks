@@ -1,12 +1,83 @@
 # Version changelog
 
+## 0.3.4
+
+* Fixed state refresh bugs in `databricks_sql_permissions` ([#620](https://github.com/databrickslabs/terraform-provider-databricks/issues/620), [#619](https://github.com/databrickslabs/terraform-provider-databricks/issues/620))
+* Fixed `workspace_ids_filter` mapping for `databricks_mws_log_delivery` ([#635](https://github.com/databrickslabs/terraform-provider-databricks/issues/635))
+* Multiple documentation improvements ([#597](https://github.com/databrickslabs/terraform-provider-databricks/issues/597), [eb60d10](https://github.com/databrickslabs/terraform-provider-databricks/commit/eb60d103ea63221a1eb0069723ba3a0af45dbe3b), [edcd4b1](https://github.com/databrickslabs/terraform-provider-databricks/commit/edcd4b121254e3ff3130bed9c4ef9d849d342561), [404bdab](https://github.com/databrickslabs/terraform-provider-databricks/commit/404bdab637c0a4a15b6a4b6a77567166315955ca), [#615](https://github.com/databrickslabs/terraform-provider-databricks/pull/615), [f14b825](https://github.com/databrickslabs/terraform-provider-databricks/commit/f14b825e9cb11d75e9ad077b35c7e9c410fd8351), [e615c3a](https://github.com/databrickslabs/terraform-provider-databricks/commit/e615c3a68d1ad45f91453ec448b55ca7b204fb97), [#612](https://github.com/databrickslabs/terraform-provider-databricks/pull/612))
+* Mounting clusters are recreated now, even when they are deleted ([#637](https://github.com/databrickslabs/terraform-provider-databricks/issues/637))
+* Fixed handling of empty blocks for clusters/jobs/instance pools ([22cdf2f](https://github.com/databrickslabs/terraform-provider-databricks/commit/22cdf2fc9d50f67b14b49d11e7fbaacce0f52399))
+* Mark instance pool attributes as ForceNew when it's requited ([#629](https://github.com/databrickslabs/terraform-provider-databricks/issues/629))
+* Switched to use https://staticcheck.io/ for static code analysis ([#602](https://github.com/databrickslabs/terraform-provider-databricks/issues/602))
+
+**Behavior changes**
+
+* The `customer_managed_key_id` field in `databricks_mws_workspaces` resource is deprecated and should be replaced with `managed_services_customer_managed_key_id` (and optionally `storage_customer_managed_key_id`). `databricks_mws_customer_managed_keys` now requires the parameter `use_cases` ([#642](https://github.com/databrickslabs/terraform-provider-databricks/pull/642)). *If you've used the resource before, please add `use_cases = ["MANAGED_SERVICES"]` to keep the behaviour.*
+
+Updated dependency versions:
+
+* Bump github.com/aws/aws-sdk-go to v1.38.30
+* Bump github.com/hashicorp/go-retryablehttp to v0.7.0
+* Bump github.com/hashicorp/hcl/v2 to v2.10.0
+* Bump github.com/hashicorp/terraform-plugin-sdk/v2 to v2.6.1
+* Bump github.com/zclconf/go-cty to v1.8.2
+
+## 0.3.3
+
+* Added resources for SQL Analytics queries and dashboards: `databricks_sql_query`, `databricks_sql_visualization`, `databricks_sql_dashboard`, `databricks_sql_widget` ([#553](https://github.com/databrickslabs/terraform-provider-databricks/pull/553))
+* Added `databricks_sql_permissions` resource ([#545](https://github.com/databrickslabs/terraform-provider-databricks/pull/545/files))
+* Fixed documentation bugs ([#603](https://github.com/databrickslabs/terraform-provider-databricks/issues/603))
+* Improved resource exporter ([#593](https://github.com/databrickslabs/terraform-provider-databricks/issues/593))
+* Added missing properties to `databricks_mws_private_access_settings` ([#590](https://github.com/databrickslabs/terraform-provider-databricks/issues/590))
+* Include SQLA data source ID in `databricks_sql_endpoint` state ([#601](https://github.com/databrickslabs/terraform-provider-databricks/issues/601))
+* Apply `debug_truncate_bytes` also for response dumps ([#589](https://github.com/databrickslabs/terraform-provider-databricks/issues/589))
+* More verbose logging of `databricks_cluster` termination reason ([#588](https://github.com/databrickslabs/terraform-provider-databricks/issues/588))
+* Move non-auth provider config documentation into separate section ([#587](https://github.com/databrickslabs/terraform-provider-databricks/pull/587))
+
+
+## 0.3.2
+
+* Fixed minor issues to add support for GCP ([#558](https://github.com/databrickslabs/terraform-provider-databricks/pull/558))
+* Fixed `databricks_permissions` for SQL Analytics Entities ([#535](https://github.com/databrickslabs/terraform-provider-databricks/issues/535))
+* Fixed incorrect HTTP 404 handling on create ([#564](https://github.com/databrickslabs/terraform-provider-databricks/issues/564), [#576](https://github.com/databrickslabs/terraform-provider-databricks/issues/576))
+* Fixed incorrect escaping of notebook names ([#566](https://github.com/databrickslabs/terraform-provider-databricks/pull/566))
+* Fixed entitlements for databricks_group ([#549](https://github.com/databrickslabs/terraform-provider-databricks/pull/549))
+* Fixed rate limiting to perform more than 1 request per second ([#577](https://github.com/databrickslabs/terraform-provider-databricks/pull/577))
+* Added support for spot instances on Azure ([#571](https://github.com/databrickslabs/terraform-provider-databricks/pull/571))
+* Added job schedules support for `pause_status` as a optional field. ([#575](https://github.com/databrickslabs/terraform-provider-databricks/pull/575))
+* Fixed minor documentation issues.
+
+Updated dependency versions:
+
+* Bump github.com/aws/aws-sdk-go from 1.37.20 to 1.38.10
+* Bump github.com/hashicorp/hcl/v2 from 2.9.0 to 2.9.1 
+* Bump github.com/zclconf/go-cty from 1.8.0 to 1.8.1
+* Bump github.com/google/go-querystring from 1.0.0 to 1.1.0
+
 ## 0.3.1
 
-* Added `databricks_global_init_script` resource to configure global init scripts ([#487](https://github.com/databrickslabs/terraform-provider-databricks/issues/487))
+* Added `databricks_global_init_script` resource to configure global init scripts ([#487](https://github.com/databrickslabs/terraform-provider-databricks/issues/487)).
+* Added `databricks_sql_endpoint` resource ([#498](https://github.com/databrickslabs/terraform-provider-databricks/pull/498))
+* Added [experimental resource exporter](https://github.com/databrickslabs/terraform-provider-databricks/blob/master/docs/guides/experimental-exporter.md) to generate configuration for entire workspace.
+* Improved user-facing documentaiton ([#508](https://github.com/databrickslabs/terraform-provider-databricks/pull/508/files), [#516](https://github.com/databrickslabs/terraform-provider-databricks/pull/516), [#511](https://github.com/databrickslabs/terraform-provider-databricks/pull/511), [#504](https://github.com/databrickslabs/terraform-provider-databricks/pull/504), [#492]([Update docs in various places](https://github.com/databrickslabs/terraform-provider-databricks/pull/492)))
+* Simplified authentication issues debugging ([#490](https://github.com/databrickslabs/terraform-provider-databricks/pull/490))
+* Made cleaner error message for no config profile ([#491](https://github.com/databrickslabs/terraform-provider-databricks/pull/491))
+* Allow tokens without comment or expiration ([#495](https://github.com/databrickslabs/terraform-provider-databricks/pull/495/files))
+* Ensured consistent slashes in notebook paths for different OSes ([#500](https://github.com/databrickslabs/terraform-provider-databricks/pull/500))
+* Fix error message panic in command result parsing ([#502](https://github.com/databrickslabs/terraform-provider-databricks/pull/502))
+* Updated `databricks_group` data resource to allow non-alphanumeric characters in group name filter ([#507](https://github.com/databrickslabs/terraform-provider-databricks/pull/507/files))
 
 **Behavior changes**
 
 * Assigning any permission to `admins` would result in an error, so that behavior is consistent ([#486](https://github.com/databrickslabs/terraform-provider-databricks/issues/486)).
+
+Updated dependency versions:
+
+* github.com/zclconf/go-cty from 1.2.1 to 1.7.1
+* github.com/Azure/go-autorest/autorest/azure/auth from 0.5.6 to 0.5.7 
+* github.com/hashicorp/hcl/v2 from 2.3.0 to 2.8.2
+* github.com/aws/aws-sdk-go from 1.37.1 to 1.37.11
+* github.com/Azure/go-autorest/autorest from 0.11.17 to 0.11.18
 
 ## 0.3.0
 

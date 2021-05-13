@@ -3,6 +3,8 @@ subcategory: "SQL Analytics"
 ---
 # databricks_sql_endpoint Resource
 
+-> **Public Preview** This feature is in [Public Preview](https://docs.databricks.com/release-notes/release-types.html). Contact your Databricks representative to request access.
+
 To create [SQL endpoints](https://docs.databricks.com/sql/get-started/concepts.html) you must have `allow_sql_analytics_access` on your [databricks_group](group.md#allow_sql_analytics_access) or [databricks_user](user.md#allow_sql_analytics_access).
 
 ## Example usage
@@ -44,6 +46,7 @@ In addition to all arguments above, the following attributes are exported:
 
 * `jdbc_url` - JDBC connection string.
 * `odbc_params` - ODBC connection params: `odbc_params.host`, `odbc_params.path`, `odbc_params.protocol`, and `odbc_params.port`.
+* `data_source_id` - ID of the data source for this endpoint. This is used to bind an SQLA query to an endpoint.
 
 ## Access Control
 

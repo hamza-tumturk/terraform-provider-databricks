@@ -285,7 +285,7 @@ func (c *DatabricksClient) unmarshall(path string, body []byte, response interfa
 
 func (c *DatabricksClient) api2(r *http.Request) error {
 	if r.URL == nil {
-		return fmt.Errorf("No URL found in request")
+		return fmt.Errorf("no URL found in request")
 	}
 	r.URL.Path = fmt.Sprintf("/api/2.0%s", r.URL.Path)
 	r.Header.Set("Content-Type", "application/json")
@@ -302,7 +302,7 @@ func (c *DatabricksClient) api2(r *http.Request) error {
 
 func (c *DatabricksClient) api12(r *http.Request) error {
 	if r.URL == nil {
-		return fmt.Errorf("No URL found in request")
+		return fmt.Errorf("no URL found in request")
 	}
 	r.URL.Path = fmt.Sprintf("/api/1.2%s", r.URL.Path)
 	r.Header.Set("Content-Type", "application/json")
@@ -390,7 +390,11 @@ func (c *DatabricksClient) redactedDump(body []byte) (res string) {
 		// error in this case is not much relevant
 		return
 	}
-	return onlyNBytes(string(rePacked), 1024)
+	maxBytes := 1024
+	if c.DebugTruncateBytes > maxBytes {
+		maxBytes = c.DebugTruncateBytes
+	}
+	return onlyNBytes(string(rePacked), maxBytes)
 }
 
 func (c *DatabricksClient) userAgent(ctx context.Context) string {
@@ -439,7 +443,7 @@ func (c *DatabricksClient) genericQuery(ctx context.Context, method, requestURL 
 			headers += "\n"
 		}
 	}
-	log.Printf("[DEBUG] %s %s %s%v", method, requestURL, headers, c.redactedDump(requestBody))
+	log.Printf("[DEBUG] %s %s %s%v", method, requestURL, headers, c.redactedDump(requestBody)) // lgtm[go/clear-text-logging]
 
 	r, err := retryablehttp.FromRequest(request)
 	if err != nil {
@@ -483,8 +487,9 @@ func makeRequestBody(method string, requestURL *string, data interface{}, marsha
 				if v.IsZero() {
 					continue
 				}
-				s = append(s, fmt.Sprintf("%v=%s", k.Interface(),
-					url.PathEscape(fmt.Sprintf("%v", v.Interface()))))
+				s = append(s, fmt.Sprintf("%s=%s",
+					strings.Replace(url.QueryEscape(fmt.Sprintf("%v", k.Interface())), "+", "%20", -1),
+					strings.Replace(url.QueryEscape(fmt.Sprintf("%v", v.Interface())), "+", "%20", -1)))
 			}
 			*requestURL += "?" + strings.Join(s, "&")
 		case reflect.Struct:
@@ -494,7 +499,7 @@ func makeRequestBody(method string, requestURL *string, data interface{}, marsha
 			}
 			*requestURL += "?" + params.Encode()
 		default:
-			return requestBody, fmt.Errorf("Unsupported request data: %#v", data)
+			return requestBody, fmt.Errorf("unsupported request data: %#v", data)
 		}
 	} else {
 		if marshalJSON {

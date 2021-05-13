@@ -13,7 +13,7 @@ Simple resource usage:
 
 ```hcl
 // now you can do `%fs ls /mnt/experiments` in notebooks
-resource "databricks_s3_mount" "this" {
+resource "databricks_aws_s3_mount" "this" {
     instance_profile = databricks_instance_profile.ds.id
     s3_bucket_name = aws_s3_bucket.this.bucket
     mount_name = "experiments"
@@ -24,7 +24,7 @@ Full end-to-end actions required to securely mount S3 bucket on all clusters wit
 
 ```hcl
 variable "databricks_account_id" {
-  description = "Account Id that could be found in the top right corner of https://accounts.cloud.databricks.com/"
+  description = "Account Id that could be found in the bottom left corner of https://accounts.cloud.databricks.com/"
 }
 
 // Step 1: Create bucket
@@ -122,7 +122,7 @@ resource "databricks_instance_profile" "ds" {
 }
 
 // Step 14: now you can do `%fs ls /mnt/experiments` in notebooks
-resource "databricks_s3_mount" "this" {
+resource "databricks_aws_s3_mount" "this" {
     instance_profile = databricks_instance_profile.ds.id
     s3_bucket_name = aws_s3_bucket.this.bucket
     mount_name = "experiments"

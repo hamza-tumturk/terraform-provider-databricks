@@ -23,6 +23,26 @@ func (lw *levelWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+func (ic *importContext) allServicesAndListing() (string, string) {
+	services := ""
+	listing := ""
+	for _, ir := range ic.Importables {
+		if !strings.Contains(services, ir.Service) {
+			if len(services) > 0 {
+				services += ","
+			}
+			services += ir.Service
+		}
+		if ir.List != nil && !strings.Contains(listing, ir.Service) {
+			if len(listing) > 0 {
+				listing += ","
+			}
+			listing += ir.Service
+		}
+	}
+	return services, listing
+}
+
 // Run import according to flags
 func Run(args ...string) error {
 	log.SetOutput(&logLevel)
@@ -47,23 +67,7 @@ func Run(args ...string) error {
 	flags.BoolVar(&ic.mounts, "mounts", false, "List DBFS mount points.")
 	flags.BoolVar(&ic.generateDeclaration, "generateProviderDeclaration", false,
 		"Generate Databricks provider declaration (for Terraform >= 0.13).")
-
-	listing := ""
-	services := ""
-	for _, ir := range ic.Importables {
-		if !strings.Contains(services, ir.Service) {
-			if len(services) > 0 {
-				services += ","
-			}
-			services += ir.Service
-		}
-		if ir.List != nil && !strings.Contains(listing, ir.Service) {
-			if len(listing) > 0 {
-				listing += ","
-			}
-			listing += ir.Service
-		}
-	}
+	services, listing := ic.allServicesAndListing()
 	flags.StringVar(&ic.services, "services", services,
 		"Comma-separated list of services to import. By default all services are imported.")
 	flags.StringVar(&ic.listing, "listing", listing,
@@ -73,6 +77,8 @@ func Run(args ...string) error {
 	flags.StringVar(&ic.match, "match", "", "Match resource names during listing operation. "+
 		"This filter applies to all resources that are getting listed, so if you want to import "+
 		"all dependencies of just one cluster, specify -listing=compute")
+	prefix := ""
+	flags.StringVar(&prefix, "prefix", "", "Prefix that will be added to the name of all exported resources")
 	newArgs := args
 	if len(args) > 1 && args[1] == "exporter" {
 		newArgs = args[2:]
@@ -80,6 +86,9 @@ func Run(args ...string) error {
 	err = flags.Parse(newArgs)
 	if err != nil {
 		return err
+	}
+	if len(prefix) > 0 {
+		ic.prefix = prefix + "_"
 	}
 	if ic.debug {
 		logLevel = append(logLevel, "[DEBUG]")

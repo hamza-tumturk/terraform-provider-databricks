@@ -31,6 +31,11 @@ func TestResourceJobCreate(t *testing.T) {
 							Jar: "dbfs://aa/bb/cc.jar",
 						},
 					},
+					Schedule: &CronSchedule{
+						QuartzCronExpression: "0 15 22 ? * *",
+						TimezoneID:           "America/Los_Angeles",
+						PauseStatus:          "PAUSED",
+					},
 					Name:                   "Featurizer",
 					MaxRetries:             3,
 					MinRetryIntervalMillis: 5000,
@@ -64,6 +69,11 @@ func TestResourceJobCreate(t *testing.T) {
 						MinRetryIntervalMillis: 5000,
 						RetryOnTimeout:         true,
 						MaxConcurrentRuns:      1,
+						Schedule: &CronSchedule{
+							QuartzCronExpression: "0 15 22 ? * *",
+							TimezoneID:           "America/Los_Angeles",
+							PauseStatus:          "PAUSED",
+						},
 					},
 				},
 			},
@@ -76,7 +86,11 @@ func TestResourceJobCreate(t *testing.T) {
 		min_retry_interval_millis = 5000
 		name = "Featurizer"
 		retry_on_timeout = true
-
+		schedule {
+			quartz_cron_expression = "0 15 22 ? * *"
+			timezone_id = "America/Los_Angeles"
+			pause_status = "PAUSED"
+		}
 		spark_jar_task {
 			main_class_name = "com.labs.BarMain"
 		}
@@ -97,6 +111,9 @@ func TestResourceJobCreateSingleNode(t *testing.T) {
 		SparkConf: map[string]string{
 			"spark.master":                     "local[*]",
 			"spark.databricks.cluster.profile": "singleNode",
+		},
+		CustomTags: map[string]string{
+			"ResourceClass": "SingleNode",
 		},
 	}
 	d, err := qa.ResourceFixture{
@@ -147,7 +164,10 @@ func TestResourceJobCreateSingleNode(t *testing.T) {
 			spark_conf {
 				"spark.master" = "local[*]"
 				"spark.databricks.cluster.profile" = "singleNode"
-			  }
+			}
+            custom_tags {
+                "ResourceClass" = "SingleNode"
+            }
 		  }	
 		max_concurrent_runs = 1
 		max_retries = 3

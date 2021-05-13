@@ -3,7 +3,7 @@ subcategory: "AWS"
 ---
 # databricks_mws_workspaces resource
 
--> **Note** This resource has an evolving API, which may change in future versions of the provider.
+-> **Note** This resource has an evolving API, which will change in the upcoming versions of the provider in order to simplify user experience.
 
 This resource allows you to set up [workspaces in E2 architecture on AWS](https://docs.databricks.com/getting-started/overview.html#e2-architecture-1). Please follow this [complete runnable example](../guides/aws-workspace.md) with new VPC and new workspace setup.
 
@@ -20,7 +20,7 @@ To get workspace running, you have to configure a couple of things:
 
 ```hcl
 variable "databricks_account_id" {
-  description = "Account Id that could be found in the top right corner of https://accounts.cloud.databricks.com/"
+  description = "Account Id that could be found in the bottom left corner of https://accounts.cloud.databricks.com/"
 }
 
 provider "databricks" {
@@ -91,7 +91,7 @@ By default, Databricks creates a VPC in your AWS account for each workspace. Dat
 
 ```hcl
 variable "databricks_account_id" {
-  description = "Account Id that could be found in the top right corner of https://accounts.cloud.databricks.com/"
+  description = "Account Id that could be found in the bottom left corner of https://accounts.cloud.databricks.com/"
 }
 
 resource "random_string" "naming" {
@@ -174,16 +174,19 @@ resource "databricks_mws_workspaces" "this" {
 
 -> **Note** All workspaces would be verified to get into runnable state or cleaned up upon failure.
 
-The following arguments are required:
+The following arguments are available:
 
 * `network_id` - (Optional) `network_id` from [networks](mws_networks.md)
-* `account_id` - Account Id that could be found in the top right corner of [Accounts Console](https://accounts.cloud.databricks.com/).
+* `account_id` - Account Id that could be found in the bottom left corner of [Accounts Console](https://accounts.cloud.databricks.com/).
 * `credentials_id` - `credentials_id` from [credentials](mws_credentials.md)
-* `customer_managed_key_id` - (Optional) `customer_managed_key_id` from [customer managed keys](mws_customer_managed_keys.md)
+* `customer_managed_key_id` - (Optional, **Deprecated**, see `managed_services_customer_managed_key_id` and `storage_customer_managed_key_id`) `customer_managed_key_id` from [customer managed keys](mws_customer_managed_keys.md)
+* `managed_services_customer_managed_key_id` - (Optional) `customer_managed_key_id` from [customer managed keys](mws_customer_managed_keys.md) with `use_cases` set to `MANAGED_SERVICES`. This is used to encrypt the workspace's notebook and secret data in the control plane.
+* `storage_customer_managed_key_id` - (Optional, **Deprecated**) `customer_managed_key_id` from [customer managed keys](mws_customer_managed_keys.md) with `use_cases` set to `STORAGE`. This is used to encrypt the DBFS Storage & Cluster EBS Volumes.
 * `deployment_name` - part of URL: `https://<deployment-name>.cloud.databricks.com`
 * `workspace_name` - name of the workspace, will appear on UI
 * `aws_region` - AWS region of VPC
 * `storage_configuration_id` - `storage_configuration_id` from [storage configuration](mws_storage_configurations.md)
+* `private_access_settings_id` - (Optional) Canonical unique identifier of [databricks_mws_private_access_settings](mws_private_access_settings.md) in Databricks Account
 
 ## Attribute Reference
 

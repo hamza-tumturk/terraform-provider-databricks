@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -38,7 +37,7 @@ func TestResourceAwsS3MountCreate(t *testing.T) {
 			},
 		},
 		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
+		CommandMock: func(commandStr string) common.CommandResults {
 			trunc := internal.TrimLeadingWhitespace(commandStr)
 			t.Logf("Received command:\n%s", trunc)
 			if strings.HasPrefix(trunc, "def safe_mount") {
@@ -46,7 +45,10 @@ func TestResourceAwsS3MountCreate(t *testing.T) {
 				assert.Contains(t, trunc, `{}`)             // empty brackets for empty config
 			}
 			assert.Contains(t, trunc, "/mnt/this_mount")
-			return testS3BucketPath, nil
+			return common.CommandResults{
+				ResultType: "text",
+				Data:       testS3BucketPath,
+			}
 		},
 		State: map[string]interface{}{
 			"cluster_id":     "this_cluster",
@@ -55,7 +57,7 @@ func TestResourceAwsS3MountCreate(t *testing.T) {
 		},
 		Create: true,
 	}.Apply(t)
-	require.NoError(t, err, err) // TODO: global search-replace for NoError
+	require.NoError(t, err, err)
 	assert.Equal(t, "this_mount", d.Id())
 	assert.Equal(t, testS3BucketPath, d.Get("source"))
 }
@@ -69,7 +71,7 @@ func TestResourceAwsS3MountCreate_nothing_specified(t *testing.T) {
 		},
 		Create: true,
 	}.Apply(t)
-	require.EqualError(t, err, "Either cluster_id or instance_profile must be specified")
+	require.EqualError(t, err, "either cluster_id or instance_profile must be specified")
 }
 
 func TestResourceAwsS3MountCreate_invalid_arn(t *testing.T) {
@@ -83,37 +85,6 @@ func TestResourceAwsS3MountCreate_invalid_arn(t *testing.T) {
 		Create: true,
 	}.Apply(t)
 	require.EqualError(t, err, "arn: invalid prefix")
-}
-
-func TestResourceAwsS3MountCreate_Error(t *testing.T) {
-	d, err := qa.ResourceFixture{
-		Fixtures: []qa.HTTPFixture{
-			{
-				Method:       "GET",
-				ReuseRequest: true,
-				Resource:     "/api/2.0/clusters/get?cluster_id=this_cluster",
-				Response: compute.ClusterInfo{
-					State: compute.ClusterStateRunning,
-					AwsAttributes: &compute.AwsAttributes{
-						InstanceProfileArn: "abc",
-					},
-				},
-			},
-		},
-		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
-			return "", errors.New("Some error")
-		},
-		State: map[string]interface{}{
-			"cluster_id":     "this_cluster",
-			"mount_name":     "this_mount",
-			"s3_bucket_name": testS3BucketName,
-		},
-		Create: true,
-	}.Apply(t)
-	require.EqualError(t, err, "Some error")
-	assert.Equal(t, "this_mount", d.Id())
-	assert.Equal(t, "", d.Get("source"))
 }
 
 func TestResourceAwsS3MountRead(t *testing.T) {
@@ -132,12 +103,15 @@ func TestResourceAwsS3MountRead(t *testing.T) {
 			},
 		},
 		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
+		CommandMock: func(commandStr string) common.CommandResults {
 			trunc := internal.TrimLeadingWhitespace(commandStr)
 			t.Logf("Received command:\n%s", trunc)
 			assert.Contains(t, trunc, "dbutils.fs.mounts()")
 			assert.Contains(t, trunc, `mount.mountPoint == "/mnt/this_mount"`)
-			return testS3BucketPath, nil
+			return common.CommandResults{
+				ResultType: "text",
+				Data:       testS3BucketPath,
+			}
 		},
 		State: map[string]interface{}{
 			"cluster_id":     "this_cluster",
@@ -168,10 +142,13 @@ func TestResourceAwsS3MountRead_NotFound(t *testing.T) {
 			},
 		},
 		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
+		CommandMock: func(commandStr string) common.CommandResults {
 			trunc := internal.TrimLeadingWhitespace(commandStr)
 			t.Logf("Received command:\n%s", trunc)
-			return "", errors.New("Mount not found")
+			return common.CommandResults{
+				ResultType: "error",
+				Summary:    "Mount not found",
+			}
 		},
 		State: map[string]interface{}{
 			"cluster_id":     "this_cluster",
@@ -200,10 +177,13 @@ func TestResourceAwsS3MountRead_Error(t *testing.T) {
 			},
 		},
 		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
+		CommandMock: func(commandStr string) common.CommandResults {
 			trunc := internal.TrimLeadingWhitespace(commandStr)
 			t.Logf("Received command:\n%s", trunc)
-			return "", errors.New("Some error")
+			return common.CommandResults{
+				ResultType: "error",
+				Summary:    "Some error",
+			}
 		},
 		State: map[string]interface{}{
 			"cluster_id":     "this_cluster",
@@ -234,12 +214,15 @@ func TestResourceAwsS3MountDelete(t *testing.T) {
 			},
 		},
 		Resource: ResourceAWSS3Mount(),
-		CommandMock: func(commandStr string) (string, error) {
+		CommandMock: func(commandStr string) common.CommandResults {
 			trunc := internal.TrimLeadingWhitespace(commandStr)
 			t.Logf("Received command:\n%s", trunc)
 			assert.Contains(t, trunc, "/mnt/this_mount")
 			assert.Contains(t, trunc, "dbutils.fs.unmount(mount_point)")
-			return "", nil
+			return common.CommandResults{
+				ResultType: "text",
+				Data:       "",
+			}
 		},
 		State: map[string]interface{}{
 			"cluster_id":     "this_cluster",
@@ -266,7 +249,7 @@ func TestAwsAccS3Mount(t *testing.T) {
 		bucket := qa.GetEnvOrSkipTest(t, "TEST_S3_BUCKET")
 		client := compute.CommonEnvironmentClientWithRealCommandExecutor()
 		clustersAPI := compute.NewClustersAPI(ctx, client)
-		clusterInfo, err := getOrCreateMountingClusterWithInstanceProfile(
+		clusterInfo, err := GetOrCreateMountingClusterWithInstanceProfile(
 			clustersAPI, instanceProfile)
 		require.NoError(t, err)
 		defer func() {

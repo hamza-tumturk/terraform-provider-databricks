@@ -15,7 +15,7 @@ func TestReflectKind(t *testing.T) {
 
 func TestSchemaPath(t *testing.T) {
 	_, err := SchemaPath(map[string]*schema.Schema{}, "x", "y", "z")
-	assert.EqualError(t, err, "Missing key x")
+	assert.EqualError(t, err, "missing key x")
 
 	_, err = SchemaPath(map[string]*schema.Schema{})
 	assert.EqualError(t, err, "[] does not compute")
@@ -169,6 +169,9 @@ type Address struct {
 	Line      string `json:"line" tf:"group:v"`
 	Lijn      string `json:"lijn" tf:"group:v"`
 	IsPrimary bool   `json:"primary"`
+
+	OptionalString string `json:"optional_string,omitempty"`
+	RequiredString string `json:"required_string"`
 }
 
 type Dummy struct {
@@ -260,7 +263,7 @@ func TestPrimitiveReflectValueFromInterface(t *testing.T) {
 func TestIterFields(t *testing.T) {
 	v := reflect.ValueOf("x")
 	err := iterFields(v, []string{"x"}, scm, nil)
-	assert.EqualError(t, err, "Value of Struct is expected, but got String: \"x\"")
+	assert.EqualError(t, err, "value of Struct is expected, but got String: \"x\"")
 
 	v = reflect.ValueOf(testStruct{})
 	err = iterFields(v, []string{}, map[string]*schema.Schema{
@@ -268,7 +271,7 @@ func TestIterFields(t *testing.T) {
 			Type: schema.TypeInt,
 		},
 	}, nil)
-	assert.EqualError(t, err, "Inconsistency: integer has omitempty, but is not optional")
+	assert.EqualError(t, err, "inconsistency: integer has omitempty, but is not optional")
 
 	err = iterFields(v, []string{}, map[string]*schema.Schema{
 		"non_optional": {
@@ -277,7 +280,7 @@ func TestIterFields(t *testing.T) {
 			Optional: true,
 		},
 	}, nil)
-	assert.EqualError(t, err, "Inconsistency: non_optional is optional, default is empty, but has no omitempty")
+	assert.EqualError(t, err, "inconsistency: non_optional is optional, default is empty, but has no omitempty")
 
 	err = iterFields(v, []string{}, map[string]*schema.Schema{
 		"non_optional": {
@@ -352,6 +355,18 @@ func TestStructToData(t *testing.T) {
 	assert.Equal(t, "something", d.Get("description"))
 	assert.Equal(t, false, d.Get("enabled"))
 	assert.Equal(t, 2, d.Get("addresses.#"))
+
+	{
+		//lint:ignore SA1019 Empty optional string should not be set.
+		_, ok := d.GetOkExists("addresses.0.optional_string")
+		assert.Falsef(t, ok, "Empty optional string should not be set in ResourceData")
+	}
+
+	{
+		//lint:ignore SA1019 Empty required string should be set.
+		_, ok := d.GetOkExists("addresses.0.required_string")
+		assert.Truef(t, ok, "Empty required string should be set in ResourceData")
+	}
 
 	var dummyCopy Dummy
 	err = DataToStructPointer(d, s, &dummyCopy)

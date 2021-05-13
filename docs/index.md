@@ -15,7 +15,7 @@ Use the Databricks Terraform provider to interact with almost all of [Databricks
 Compute resources
 * Deploy [databricks_cluster](resources/cluster.md) on selected [databricks_node_type](data-sources/node_type.md)
 * Schedule automated [databricks_job](resources/job.md)
-* Constrol cost and data access with [databricks_cluster_policy](resources/cluster_policy.md)
+* Control cost and data access with [databricks_cluster_policy](resources/cluster_policy.md)
 * Speedup job & cluster startup with [databricks_instance_pool](resources/instance_pool.md)
 * Customize clusters with [databricks_global_init_script](resources/global_init_script.md)
 * Manage few [databricks_notebook](resources/notebook.md), and even [list them](data-sources/notebook_paths.md)
@@ -32,6 +32,7 @@ Security
 * Manage data access with [databricks_instance_profile](resources/instance_profile.md), which can be assigned through [databricks_group_instance_profile](resources/group_instance_profile.md) and [databricks_user_instance_profile](resources/user_instance_profile.md)
 * Control which networks can access workspace with [databricks_ip_access_list](resources/ip_access_list.md)
 * Generically manage [databricks_permissions](resources/permissions.md)
+* Manage data object access control lists with [databricks_sql_permissions](resources/sql_permissions.md)
 * Keep sensitive elements like passwords in [databricks_secret](resources/secret.md), grouped into [databricks_secret_scope](resources/secret_scope.md) and controlled by [databricks_secret_acl](resources/secret_acl.md)
 
 
@@ -42,6 +43,8 @@ Security
 
 SQL Analytics
 * Create [databricks_sql_endpoint](resources/sql_endpoint.md) controlled by [databricks_permissions](resources/permissions.md).
+* Manage [queries](resources/sql_query.md) and their [visualizations](resources/sql_visualization.md).
+* Manage [dashboards](resources/sql_dashboard.md) and their [widgets](resources/sql_widget.md).
 
 ## Example Usage
 
@@ -95,7 +98,7 @@ output "job_url" {
 !> **Warning** Please be aware that hard coding any credentials in plain text is not something that is recommended. We strongly recommend using a Terraform backend that supports encryption. Please use [environment variables](#environment-variables), `~/.databrickscfg` file, encrypted `.tfvars` files or secret store of your choice (Hashicorp [Vault](https://www.vaultproject.io/), AWS [Secrets Manager](https://aws.amazon.com/secrets-manager/), AWS [Param Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html), Azure [Key Vault](https://azure.microsoft.com/en-us/services/key-vault/))
 
 
-There are currently three supported methods [to authenticate into](https://docs.databricks.com/dev-tools/api/latest/authentication.html) the Databricks platform to create resources:
+There are currently three supported methods to [authenticate](https://docs.databricks.com/dev-tools/api/latest/authentication.html) into the Databricks platform to create resources:
 
 * [PAT Tokens](https://docs.databricks.com/dev-tools/api/latest/authentication.html)
 * Username and password pair
@@ -156,6 +159,8 @@ provider "databricks" {
 ```
 
 ## Argument Reference
+
+-> **Note** If you experience technical difficulties with rolling out resources in this example, please make sure that [environment variables](#environment-variables) don't [conflict with other](#empty-provider-block) provider block attributes. When in doubt, please run `TF_LOG=DEBUG terraform apply` to enable [debug mode](https://www.terraform.io/docs/internals/debugging.html) through the [`TF_LOG`](https://www.terraform.io/docs/cli/config/environment-variables.html#tf_log) environment variable. Look specifically for `Explicit and implicit attributes` lines, that should indicate authentication attributes used.
 
 The provider block supports the following arguments:
 
@@ -239,10 +244,18 @@ resource "databricks_user" "my-user" {
 resides. Alternatively, you can provide this value as an environment variable `DATABRICKS_AZURE_TENANT_ID` or `ARM_TENANT_ID`.
 * `azure_environment` - (optional) This is the Azure Environment which defaults to the `public` cloud. Other options are `german`, `china` and `usgovernment`. Alternatively, you can provide this value as an environment variable `ARM_ENVIRONMENT`.
 * `pat_token_duration_seconds` - The current implementation of the azure auth via sp requires the provider to create a temporary personal access token within Databricks. The current AAD implementation does not cover all the APIs for Authentication. This field determines the duration in which that temporary PAT token is alive. It is measured in seconds and will default to `3600` seconds. 
-* `debug_truncate_bytes` - Applicable only when `TF_LOG=DEBUG` is set. Truncate JSON fields in HTTP requests and responses above this limit. Default is *96*.
-* `debug_headers` - Applicable only when `TF_LOG=DEBUG` is set. Debug HTTP headers of requests made by the provider. Default is *false*. We recommend to turn this flag on only under exceptional circumstances, when troubleshooting authentication issues. Turning this flag on will log first `debug_truncate_bytes` of any HTTP header value in cleartext.
 
 There are multiple environment variable options, the `DATABRICKS_AZURE_*` environment variables take precedence, and the `ARM_*` environment variables provide a way to share authentication configuration using the `databricks` provider alongside the `azurerm` provider.
+
+## Miscellaneous configuration parameters
+
+This section covers configuration parameters not related to authentication.  They could be used when debugging problems, or do an additional tuning of provider's behaviour:
+
+* `rate_limit` - defines maximum number of requests per second made to Databricks REST API by Terraform. Default is *15*.
+* `debug_truncate_bytes` - Applicable only when `TF_LOG=DEBUG` is set. Truncate JSON fields in HTTP requests and responses above this limit. Default is *96*.
+* `debug_headers` - Applicable only when `TF_LOG=DEBUG` is set. Debug HTTP headers of requests made by the provider. Default is *false*. We recommend to turn this flag on only under exceptional circumstances, when troubleshooting authentication issues. Turning this flag on will log first `debug_truncate_bytes` of any HTTP header value in cleartext.
+* `skip_verify` - skips SSL certificate verification for HTTP calls. *Use at your own risk.* Default is *false* (don't skip verification).
+
 
 ## Environment variables
 
@@ -266,6 +279,8 @@ The following configuration attributes can be passed via environment variables:
 |           `azure_environment` | `ARM_ENVIRONMENT`                                           |
 |        `debug_truncate_bytes` | `DATABRICKS_DEBUG_TRUNCATE_BYTES`                           |
 |               `debug_headers` | `DATABRICKS_DEBUG_HEADERS`                                  |
+|               `rate_limit`    | `DATABRICKS_RATE_LIMIT`                                     |
+
 
 ## Empty provider block
 
@@ -275,7 +290,7 @@ For example, with the following zero-argument configuration:
 provider "databricks" {}
 ```
 
-1. Provider will check all of the supported environment variables and set values of relevant arguments.
+1. Provider will check all the supported environment variables and set values of relevant arguments.
 2. In case any conflicting arguments are present, the plan will end with an error.
 3. Will check for the presence of `host` + `token` pair, continue trying otherwise.
 4. Will check for `host` + `username` + `password` presence, continue trying otherwise.
@@ -287,7 +302,55 @@ provider "databricks" {}
 
 ## Data resources and Authentication is not configured errors
 
-*In Terraform 0.13 and later*, data resources have the same dependency resolution behavior [as defined for managed resources](https://www.terraform.io/docs/language/resources/behavior.html#resource-dependencies). Most data resources make an API call to a workspace. If a workspace doesn't exist yet, `Authentication is not configured for provider` error is raised. To work around this issue and guarantee a proper lazy authentication with data resources, you should add `depends_on = [azurerm_databricks_workspace.this]` or `depends_on = [databricks_mws_workspaces.this]` to the body. This issue doesn't occur if workspace is created *in one module* and resources [within the workspace](workspace-management.md) are created *in another*. We do not recommend using Terraform 0.12 and earlier, if your usage involves data resources.
+*In Terraform 0.13 and later*, data resources have the same dependency resolution behavior [as defined for managed resources](https://www.terraform.io/docs/language/resources/behavior.html#resource-dependencies). Most data resources make an API call to a workspace. If a workspace doesn't exist yet, `authentication is not configured for provider` error is raised. To work around this issue and guarantee a proper lazy authentication with data resources, you should add `depends_on = [azurerm_databricks_workspace.this]` or `depends_on = [databricks_mws_workspaces.this]` to the body. This issue doesn't occur if workspace is created *in one module* and resources [within the workspace](guides/workspace-management.md) are created *in another*. We do not recommend using Terraform 0.12 and earlier, if your usage involves data resources.
+
+## Multiple Provider Configurations
+
+ The most common reason for technical difficulties might be related to missing `alias` attribute in `provider "databricks" {}` blocks or `provider` attribute in `resource "databricks_..." {}` blocks, when using multiple provider configurations. Please make sure to read [`alias`: Multiple Provider Configurations](https://www.terraform.io/docs/language/providers/configuration.html#alias-multiple-provider-configurations) documentation article. 
+
+## Error while installing: registry does not have a provider
+
+```
+Error while installing hashicorp/databricks: provider registry
+registry.terraform.io does not have a provider named
+registry.terraform.io/hashicorp/databricks
+```
+
+If you notice below error, it might be due to the fact that [required_providers](https://www.terraform.io/docs/language/providers/requirements.html#requiring-providers) block is not defined in *every module*, that uses Databricks Terraform Provider. Create `versions.tf` file with the following contents:
+
+```hcl
+# versions.tf
+terraform {
+  required_providers {
+    databricks = {
+      source = "databrickslabs/databricks"
+      version = "0.3.4"
+    }
+  }
+}
+```
+
+... and copy the file in every module in your codebase. Our recommendation is to skip `version` field for `versions.tf` file on module level, and keep it only on environment level.
+
+```
+├── environments
+│   ├── sandbox
+│   │   ├── README.md
+│   │   ├── main.tf
+│   │   └── versions.tf
+│   └── production
+│       ├── README.md
+│       ├── main.tf
+│       └── versions.tf
+└── modules
+    ├── first-module
+    │   ├── ...
+    │   └── versions.tf
+    └── second-module
+        ├── ...
+        └── versions.tf
+```
+
 
 ## Project Support
 

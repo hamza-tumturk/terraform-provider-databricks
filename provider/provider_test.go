@@ -82,19 +82,19 @@ func TestProviderConfigurationOptions(t *testing.T) {
 	azResourceID := "/subscriptions/a/resourceGroups/b/providers/Microsoft.Databricks/workspaces/c"
 	tests := []providerConfigTest{
 		{
-			assertError: "Authentication is not configured for provider",
+			assertError: "authentication is not configured for provider",
 		},
 		{
 			env: map[string]string{
 				"DATABRICKS_HOST": "x",
 			},
-			assertError: "Authentication is not configured for provider",
+			assertError: "authentication is not configured for provider",
 		},
 		{
 			env: map[string]string{
 				"DATABRICKS_TOKEN": "x",
 			},
-			assertError: "Host is empty, but is required by token",
+			assertError: "host is empty, but is required by token",
 		},
 		{
 			env: map[string]string{
@@ -117,7 +117,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 				"DATABRICKS_USERNAME": "x",
 				"DATABRICKS_PASSWORD": "x",
 			},
-			assertError: "Host is empty, but is required by basic_auth",
+			assertError: "host is empty, but is required by basic_auth",
 			assertToken: "x",
 			assertHost:  "https://x",
 		},
@@ -177,7 +177,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			env: map[string]string{
 				"CONFIG_FILE": "x",
 			},
-			assertError: "Authentication is not configured for provider",
+			assertError: "authentication is not configured for provider",
 		},
 		{
 			// loading with DEFAULT profile in databrickscfs
@@ -217,7 +217,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			azureWorkspaceResourceID: azResourceID,
 			env: map[string]string{
 				// // these may fail on windows. use docker container for testing.
-				"PATH": "../common/testdata:/bin",
+				"PATH": "../common/testdata",
 				"HOME": "../common/testdata",
 			},
 			assertAzure: true,
@@ -228,9 +228,9 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			azureWorkspaceResourceID: azResourceID,
 			env: map[string]string{
 				// these may fail on windows. use docker container for testing.
-				"PATH": "../common/testdata:/bin",
-				"FAIL": "yes",
+				"PATH": "../common/testdata",
 				"HOME": "../common/testdata",
+				"FAIL": "yes",
 			},
 			assertError: "Invoking Azure CLI failed with the following error: This is just a failing script.",
 		},
@@ -238,17 +238,17 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			// `az` not installed, which is expected for deployers on other clouds...
 			azureWorkspaceResourceID: azResourceID,
 			env: map[string]string{
-				"PATH": "/bin",
+				"PATH": "whatever",
 				"HOME": "../common/testdata",
 			},
-			assertError: "Most likely Azure CLI is not installed.",
+			assertError: "most likely Azure CLI is not installed.",
 		},
 		{
 			azureWorkspaceResourceID: azResourceID,
 			token:                    "x",
 			env: map[string]string{
 				// these may fail on windows. use docker container for testing.
-				"PATH": "../common/testdata:/bin",
+				"PATH": "../common/testdata",
 				"HOME": "../common/testdata",
 			},
 			assertError: "More than one authorization method configured: azure and token",
@@ -259,7 +259,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			host:                     "x",
 			env: map[string]string{
 				// these may fail on windows. use docker container for testing.
-				"PATH": "../common/testdata:/bin",
+				"PATH": "../common/testdata",
 				"HOME": "../common/testdata",
 			},
 			assertAzure: true,
@@ -270,7 +270,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			azureWorkspaceResourceID: azResourceID,
 			env: map[string]string{
 				// these may fail on windows. use docker container for testing.
-				"PATH":                "../common/testdata:/bin",
+				"PATH":                "../common/testdata",
 				"HOME":                "../common/testdata",
 				"DATABRICKS_USERNAME": "x",
 			},
@@ -282,6 +282,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 			azureClientSecret:        "y",
 			azureTenantID:            "z",
 			env: map[string]string{
+				"PATH": "../common/testdata",
 				"HOME": "../common/testdata",
 			},
 			assertAzure: true,
@@ -298,6 +299,7 @@ func TestProviderConfigurationOptions(t *testing.T) {
 				"ARM_SUBSCRIPTION_ID": "q",
 				"ARM_TENANT_ID":       "z",
 				"HOME":                "../common/testdata",
+				"PATH":                "../common/testdata",
 			},
 			assertAzure: true,
 			assertHost:  "",

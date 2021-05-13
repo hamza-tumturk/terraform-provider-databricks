@@ -115,10 +115,14 @@ var jobSchema = common.StructToSchema(JobSettings{},
 			p.Required = false
 		}
 
+		if p, err := common.SchemaPath(s, "schedule", "pause_status"); err == nil {
+			p.ValidateFunc = validation.StringInSlice([]string{"PAUSED", "UNPAUSED"}, false)
+		}
+
 		if v, err := common.SchemaPath(s, "new_cluster", "spark_conf"); err == nil {
 			v.DiffSuppressFunc = func(k, old, new string, d *schema.ResourceData) bool {
-				isPossiblyLegacyConfig := "new_cluster.0.spark_conf.%" == k && "1" == old && "0" == new
-				isLegacyConfig := "new_cluster.0.spark_conf.spark.databricks.delta.preview.enabled" == k
+				isPossiblyLegacyConfig := k == "new_cluster.0.spark_conf.%" && old == "1" && new == "0"
+				isLegacyConfig := k == "new_cluster.0.spark_conf.spark.databricks.delta.preview.enabled"
 				if isPossiblyLegacyConfig || isLegacyConfig {
 					log.Printf("[DEBUG] Suppressing diff for k=%#v old=%#v new=%#v", k, old, new)
 					return true
@@ -126,6 +130,19 @@ var jobSchema = common.StructToSchema(JobSettings{},
 				return false
 			}
 		}
+
+		if v, err := common.SchemaPath(s, "new_cluster", "aws_attributes"); err == nil {
+			v.DiffSuppressFunc = makeEmptyBlockSuppressFunc("new_cluster.0.aws_attributes.#")
+		}
+		if v, err := common.SchemaPath(s, "new_cluster", "azure_attributes"); err == nil {
+			v.DiffSuppressFunc = makeEmptyBlockSuppressFunc("new_cluster.0.azure_attributes.#")
+		}
+		if v, err := common.SchemaPath(s, "new_cluster", "gcp_attributes"); err == nil {
+			v.DiffSuppressFunc = makeEmptyBlockSuppressFunc("new_cluster.0.gcp_attributes.#")
+		}
+
+		s["email_notifications"].DiffSuppressFunc = makeEmptyBlockSuppressFunc("email_notifications.#")
+
 		s["name"].Description = "An optional name for the job. The default value is Untitled."
 		s["library"].Description = "An optional list of libraries to be installed on " +
 			"the cluster that will execute the job. The default value is an empty list."
@@ -147,11 +164,16 @@ var jobSchema = common.StructToSchema(JobSettings{},
 		s["schedule"].Description = "An optional periodic schedule for this job. " +
 			"The default behavior is that the job runs when triggered by clicking " +
 			"Run Now in the Jobs UI or sending an API request to runNow."
-		s["max_concurrent_runs"].Description = "An optional maximum allowed number of " +
-			"concurrent runs of the job."
 		s["url"] = &schema.Schema{
 			Type:     schema.TypeString,
 			Computed: true,
+		}
+		s["max_concurrent_runs"] = &schema.Schema{
+			Optional:         true,
+			Default:          1,
+			Type:             schema.TypeInt,
+			ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
+			Description:      "An optional maximum allowed number of concurrent runs of the job.",
 		}
 		return s
 	})
@@ -184,7 +206,7 @@ func ResourceJob() *schema.Resource {
 			if err != nil {
 				return err
 			}
-			d.Set("url", fmt.Sprintf("%s#job/%s", c.Host, d.Id()))
+			d.Set("url", c.FormatURL("#job/", d.Id()))
 			return common.StructToData(*job.Settings, jobSchema, d)
 		},
 		Update: func(ctx context.Context, d *schema.ResourceData, c *common.DatabricksClient) error {

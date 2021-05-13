@@ -52,7 +52,7 @@ func SchemaPath(s map[string]*schema.Schema, path ...string) (*schema.Schema, er
 	for _, p := range path {
 		v, ok := cs[p]
 		if !ok {
-			return nil, fmt.Errorf("Missing key %s", p)
+			return nil, fmt.Errorf("missing key %s", p)
 		}
 		if p == path[len(path)-1] {
 			return v, nil
@@ -106,6 +106,11 @@ func chooseFieldName(typeField reflect.StructField) string {
 		return alias
 	}
 	jsonTag := typeField.Tag.Get("json")
+	// fields without JSON tags would be treated as if ignored,
+	// but keeping linters happy
+	if jsonTag == "" {
+		return "-"
+	}
 	return strings.Split(jsonTag, ",")[0]
 }
 
@@ -171,7 +176,7 @@ func typeToSchema(v reflect.Value, t reflect.Type) map[string]*schema.Schema {
 			scm[fieldName].Type = ft
 			elem := typeField.Type.Elem()
 			switch elem.Kind() {
-			case reflect.Int:
+			case reflect.Int, reflect.Int32, reflect.Int64:
 				scm[fieldName].Elem = &schema.Schema{Type: schema.TypeInt}
 			case reflect.Float64:
 				scm[fieldName].Elem = &schema.Schema{Type: schema.TypeFloat}
@@ -186,7 +191,7 @@ func typeToSchema(v reflect.Value, t reflect.Type) map[string]*schema.Schema {
 				}
 			}
 		default:
-			panic(fmt.Errorf("Unknown type for %s: %s", fieldName, reflectKind(typeField.Type.Kind())))
+			panic(fmt.Errorf("unknown type for %s: %s", fieldName, reflectKind(typeField.Type.Kind())))
 		}
 	}
 	return scm
@@ -196,7 +201,7 @@ func iterFields(rv reflect.Value, path []string, s map[string]*schema.Schema,
 	cb func(fieldSchema *schema.Schema, path []string, valueField *reflect.Value) error) error {
 	rk := rv.Kind()
 	if rk != reflect.Struct {
-		return fmt.Errorf("Value of Struct is expected, but got %s: %#v", reflectKind(rk), rv)
+		return fmt.Errorf("value of Struct is expected, but got %s: %#v", reflectKind(rk), rv)
 	}
 	if !rv.IsValid() {
 		return fmt.Errorf("%s: got invalid reflect value %#v", path, rv)
@@ -214,11 +219,11 @@ func iterFields(rv reflect.Value, path []string, s map[string]*schema.Schema,
 		}
 		omitEmpty := strings.Contains(jsonTag, "omitempty")
 		if omitEmpty && !fieldSchema.Optional {
-			return fmt.Errorf("Inconsistency: %s has omitempty, but is not optional", fieldName)
+			return fmt.Errorf("inconsistency: %s has omitempty, but is not optional", fieldName)
 		}
 		defaultEmpty := reflect.ValueOf(fieldSchema.Default).Kind() == reflect.Invalid
 		if fieldSchema.Optional && defaultEmpty && !omitEmpty {
-			return fmt.Errorf("Inconsistency: %s is optional, default is empty, but has no omitempty", fieldName)
+			return fmt.Errorf("inconsistency: %s is optional, default is empty, but has no omitempty", fieldName)
 		}
 		valueField := rv.Field(i)
 		err := cb(fieldSchema, append(path, fieldName), &valueField)
@@ -263,6 +268,7 @@ func collectionToMaps(v interface{}, s *schema.Schema) ([]interface{}, error) {
 			path []string, valueField *reflect.Value) error {
 			fieldName := path[len(path)-1]
 			fieldValue := valueField.Interface()
+			fieldPath := strings.Join(path, ".")
 			switch fieldSchema.Type {
 			case schema.TypeList, schema.TypeSet:
 				nv, err := collectionToMaps(fieldValue, fieldSchema)
@@ -271,7 +277,7 @@ func collectionToMaps(v interface{}, s *schema.Schema) ([]interface{}, error) {
 				}
 				data[fieldName] = nv
 			default:
-				if s, ok := fieldValue.(string); ok && s == "" {
+				if fieldSchema.Optional && isValueNilOrEmpty(valueField, fieldPath) {
 					return nil
 				}
 				data[fieldName] = fieldValue
@@ -356,7 +362,7 @@ func DataToStructPointer(d *schema.ResourceData, scm map[string]*schema.Schema, 
 	rv := reflect.ValueOf(result)
 	rk := rv.Kind()
 	if rk != reflect.Ptr {
-		return fmt.Errorf("Pointer is expected, but got %s: %#v", reflectKind(rk), result)
+		return fmt.Errorf("pointer is expected, but got %s: %#v", reflectKind(rk), result)
 	}
 	rv = rv.Elem()
 	return readReflectValueFromData([]string{}, d, rv, scm)
@@ -530,7 +536,7 @@ func setPrimitiveValueOfKind(
 			return fmt.Errorf("%s[%v] is not a string", fieldPath, elem)
 		}
 		item.SetString(v)
-	case reflect.Int:
+	case reflect.Int, reflect.Int64:
 		v, ok := elem.(int)
 		if !ok {
 			return fmt.Errorf("%s[%v] is not an int", fieldPath, elem)

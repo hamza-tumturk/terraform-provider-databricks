@@ -30,7 +30,7 @@ func ResourceGlobalInitScript() *schema.Resource {
 			Type:     schema.TypeString,
 			Required: true,
 			ValidateDiagFunc: validation.ToDiagFunc(
-				validation.StringMatch(regexp.MustCompile("^[-a-zA-Z0-9_.]{1,100}$"), "Name should match regex!")),
+				validation.StringMatch(regexp.MustCompile("^[-a-zA-Z0-9_. ]{1,100}$"), "Name should match regex!")),
 		},
 		"position": {
 			Type:             schema.TypeInt,
@@ -51,7 +51,7 @@ func ResourceGlobalInitScript() *schema.Resource {
 				return err
 			}
 			if contentLen := len(content); contentLen > maxScriptSize {
-				return fmt.Errorf("Size of the global init script (%d bytes) exceeds maximal allowed (%d bytes)",
+				return fmt.Errorf("size of the global init script (%d bytes) exceeds maximal allowed (%d bytes)",
 					contentLen, maxScriptSize)
 			}
 			globalInitScriptsAPI := NewGlobalInitScriptsAPI(ctx, c)
@@ -81,7 +81,7 @@ func ResourceGlobalInitScript() *schema.Resource {
 				return err
 			}
 			if contentLen := len(content); contentLen > maxScriptSize {
-				return fmt.Errorf("Size of the global init script (%d bytes) exceeds maximal allowed (%d bytes)",
+				return fmt.Errorf("size of the global init script (%d bytes) exceeds maximal allowed (%d bytes)",
 					contentLen, maxScriptSize)
 			}
 			globalInitScriptsAPI := NewGlobalInitScriptsAPI(ctx, c)

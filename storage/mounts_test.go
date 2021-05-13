@@ -128,10 +128,13 @@ func testMountFuncHelper(t *testing.T, mountFunc func(mp MountPoint, mount Mount
 
 	var called bool
 
-	c.WithCommandMock(func(commandStr string) (s string, e error) {
+	c.WithCommandMock(func(commandStr string) common.CommandResults {
 		called = true
 		assert.Equal(t, internal.TrimLeadingWhitespace(expectedCommand), internal.TrimLeadingWhitespace(commandStr))
-		return expectedCommandResp, nil
+		return common.CommandResults{
+			ResultType: "text",
+			Data:       expectedCommandResp,
+		}
 	})
 
 	ctx := context.Background()
@@ -209,4 +212,92 @@ func TestMountPoint_Delete(t *testing.T) {
 	testMountFuncHelper(t, func(mp MountPoint, mount Mount) (s string, e error) {
 		return expectedCommandResp, mp.Delete()
 	}, nil, mountName, expectedCommand)
+}
+
+func TestDeletedMountClusterRecreates(t *testing.T) {
+	qa.HTTPFixturesApply(t, []qa.HTTPFixture{
+		{
+			Method:   "GET",
+			Resource: "/api/2.0/clusters/get?cluster_id=abc",
+			Status:   404,
+		},
+		{
+			Method:       "GET",
+			ReuseRequest: true,
+			Resource:     "/api/2.0/clusters/list",
+			Response:     map[string]interface{}{},
+		},
+		{
+			Method:       "GET",
+			ReuseRequest: true,
+			Resource:     "/api/2.0/clusters/spark-versions",
+			Response: compute.SparkVersionsList{
+				SparkVersions: []compute.SparkVersion{
+					{
+						Version:     "7.1.x-cpu-ml-scala2.12",
+						Description: "7.1 ML (includes Apache Spark 3.0.0, Scala 2.12)",
+					},
+				},
+			},
+		},
+		{
+			Method:       "GET",
+			ReuseRequest: true,
+			Resource:     "/api/2.0/clusters/list-node-types",
+			Response: compute.NodeTypeList{
+				NodeTypes: []compute.NodeType{
+					{
+						NodeTypeID:     "Standard_F4s",
+						InstanceTypeID: "Standard_F4s",
+						MemoryMB:       8192,
+						NumCores:       4,
+						NodeInstanceType: &compute.NodeInstanceType{
+							LocalDisks:      1,
+							InstanceTypeID:  "Standard_F4s",
+							LocalDiskSizeGB: 16,
+							LocalNVMeDisks:  0,
+						},
+					},
+				},
+			},
+		},
+		{
+			Method:       "POST",
+			ReuseRequest: true,
+			Resource:     "/api/2.0/clusters/create",
+			ExpectedRequest: compute.Cluster{
+				AutoterminationMinutes: 10,
+				ClusterName:            "terraform-mount",
+				NodeTypeID:             "Standard_F4s",
+				SparkVersion:           "7.3.x-scala2.12",
+				CustomTags: map[string]string{
+					"ResourceClass": "SingleNode",
+				},
+				SparkConf: map[string]string{
+					"spark.databricks.cluster.profile": "singleNode",
+					"spark.master":                     "local[*]",
+				},
+			},
+			Response: compute.ClusterID{
+				ClusterID: "bcd",
+			},
+		},
+		{
+			Method:       "GET",
+			ReuseRequest: true,
+			Resource:     "/api/2.0/clusters/get?cluster_id=bcd",
+			Response: compute.ClusterInfo{
+				ClusterID: "bcd",
+				State:     "RUNNING",
+				SparkConf: map[string]string{
+					"spark.databricks.acl.dfAclsEnabled": "true",
+					"spark.databricks.cluster.profile":   "singleNode",
+				},
+			},
+		},
+	}, func(ctx context.Context, client *common.DatabricksClient) {
+		clusterID, err := getMountingClusterID(ctx, client, "abc")
+		assert.NoError(t, err)
+		assert.Equal(t, "bcd", clusterID)
+	})
 }

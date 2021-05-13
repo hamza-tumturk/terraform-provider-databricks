@@ -1,6 +1,7 @@
 package exporter
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"github.com/databrickslabs/terraform-provider-databricks/access"
 	"github.com/databrickslabs/terraform-provider-databricks/common"
 	"github.com/databrickslabs/terraform-provider-databricks/compute"
+	"github.com/databrickslabs/terraform-provider-databricks/workspace"
 
 	"github.com/databrickslabs/terraform-provider-databricks/storage"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -41,11 +43,12 @@ var resourcesMap map[string]importable = map[string]importable{
 			if err != nil {
 				return err
 			}
-			err = os.Mkdir(fmt.Sprintf("%s/files", ic.Directory), 0755)
+			err = os.MkdirAll(fmt.Sprintf("%s/files", ic.Directory), 0755)
 			if err != nil && !os.IsExist(err) {
 				return err
 			}
-			local, err := os.Create(fmt.Sprintf("%s/files/%s", ic.Directory, path.Base(r.ID)))
+			fileName := ic.prefix + path.Base(r.ID)
+			local, err := os.Create(fmt.Sprintf("%s/files/%s", ic.Directory, fileName))
 			if err != nil {
 				return err
 			}
@@ -56,8 +59,8 @@ var resourcesMap map[string]importable = map[string]importable{
 			}
 			// libraries installed with init scripts won't be exported.
 			b := body.AppendNewBlock("resource", []string{r.Resource, r.Name}).Body()
-			relativeFile := fmt.Sprintf("${path.module}/files/%s", path.Base(r.ID))
-			b.SetAttributeValue("path", cty.StringVal(r.ID))
+			relativeFile := fmt.Sprintf("${path.module}/files/%s", fileName)
+			b.SetAttributeValue("path", cty.StringVal(strings.Replace(r.ID, "dbfs:", "", 1)))
 			b.SetAttributeRaw("source", hclwrite.Tokens{
 				&hclwrite.Token{Type: hclsyntax.TokenOQuote, Bytes: []byte{'"'}},
 				&hclwrite.Token{Type: hclsyntax.TokenQuotedLit, Bytes: []byte(relativeFile)},
@@ -80,11 +83,13 @@ var resourcesMap map[string]importable = map[string]importable{
 			return name
 		},
 		Import: func(ic *importContext, r *resource) error {
-			ic.Emit(&resource{
-				Resource: "databricks_permissions",
-				ID:       fmt.Sprintf("/instance-pools/%s", r.ID),
-				Name:     ic.Importables["databricks_instance_pool"].Name(r.Data),
-			})
+			if ic.meAdmin {
+				ic.Emit(&resource{
+					Resource: "databricks_permissions",
+					ID:       fmt.Sprintf("/instance-pools/%s", r.ID),
+					Name:     ic.Importables["databricks_instance_pool"].Name(r.Data),
+				})
+			}
 			return nil
 		},
 	},
@@ -94,14 +99,6 @@ var resourcesMap map[string]importable = map[string]importable{
 			arn := d.Get("instance_profile_arn").(string)
 			splits := strings.Split(arn, "/")
 			return splits[len(splits)-1]
-		},
-		Body: func(ic *importContext, body *hclwrite.Body, r *resource) error {
-			ipa := "instance_profile_arn"
-			b := body.AppendNewBlock("resource", []string{r.Resource, r.Name}).Body()
-			b.SetAttributeRaw(ipa, ic.reference(ic.Importables[r.Resource],
-				[]string{ipa}, r.Data.Get(ipa).(string)))
-			b.SetAttributeValue("skip_validation", cty.BoolVal(false))
-			return nil
 		},
 	},
 	"databricks_group_instance_profile": {
@@ -124,9 +121,9 @@ var resourcesMap map[string]importable = map[string]importable{
 			{Path: "aws_attributes.instance_profile_arn", Resource: "databricks_instance_profile"},
 			{Path: "instance_pool_id", Resource: "databricks_instance_pool"},
 			{Path: "init_scripts.dbfs.destination", Resource: "databricks_dbfs_file"},
-			{Path: "library.jar", Resource: "databricks_dbfs_file"},
-			{Path: "library.whl", Resource: "databricks_dbfs_file"},
-			{Path: "library.egg", Resource: "databricks_dbfs_file"},
+			{Path: "library.jar", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "library.whl", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "library.egg", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
 		},
 		List: func(ic *importContext) error {
 			clusters, err := compute.NewClustersAPI(ic.Context, ic.Client).List()
@@ -139,11 +136,15 @@ var resourcesMap map[string]importable = map[string]importable{
 					log.Printf("[INFO] Skipping job cluster %s", c.ClusterID)
 					continue
 				}
+				if strings.HasPrefix(c.ClusterName, "terraform-") {
+					log.Printf("[INFO] Skipping terraform-specific cluster %s", c.ClusterName)
+					continue
+				}
 				if !ic.MatchesName(c.ClusterName) {
 					continue
 				}
 				if c.LastActivityTime < time.Now().Unix()-lastActiveMs {
-					log.Printf("[INFO] Older inactive cluster %s", c.ClusterID)
+					log.Printf("[INFO] Older inactive cluster %s", c.ClusterName)
 					continue
 				}
 				ic.Emit(&resource{
@@ -163,11 +164,13 @@ var resourcesMap map[string]importable = map[string]importable{
 			if err := ic.importCluster(&c); err != nil {
 				return err
 			}
-			ic.Emit(&resource{
-				Resource: "databricks_permissions",
-				ID:       fmt.Sprintf("/clusters/%s", r.ID),
-				Name:     r.Data.Get("cluster_name").(string),
-			})
+			if ic.meAdmin {
+				ic.Emit(&resource{
+					Resource: "databricks_permissions",
+					ID:       fmt.Sprintf("/clusters/%s", r.ID),
+					Name:     r.Data.Get("cluster_name").(string),
+				})
+			}
 			return ic.importLibraries(r.Data, s)
 		},
 	},
@@ -184,12 +187,12 @@ var resourcesMap map[string]importable = map[string]importable{
 			{Path: "new_cluster.init_scripts.dbfs.destination", Resource: "databricks_dbfs_file"},
 			{Path: "new_cluster.instance_pool_id", Resource: "databricks_instance_pool"},
 			{Path: "existing_cluster_id", Resource: "databricks_cluster"},
-			{Path: "library.jar", Resource: "databricks_dbfs_file"},
-			{Path: "library.whl", Resource: "databricks_dbfs_file"},
-			{Path: "library.egg", Resource: "databricks_dbfs_file"},
-			{Path: "spark_python_task.python_file", Resource: "databricks_dbfs_file"},
-			{Path: "spark_python_task.parameters", Resource: "databricks_dbfs_file"},
-			{Path: "spark_jar_task.jar_uri", Resource: "databricks_dbfs_file"},
+			{Path: "library.jar", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "library.whl", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "library.egg", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "spark_python_task.python_file", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "spark_python_task.parameters", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
+			{Path: "spark_jar_task.jar_uri", Resource: "databricks_dbfs_file", Match: "dbfs_path"},
 		},
 		Import: func(ic *importContext, r *resource) error {
 			var job compute.JobSettings
@@ -204,11 +207,13 @@ var resourcesMap map[string]importable = map[string]importable{
 				Resource: "databricks_cluster",
 				ID:       job.ExistingClusterID,
 			})
-			ic.Emit(&resource{
-				Resource: "databricks_permissions",
-				ID:       fmt.Sprintf("/jobs/%s", r.ID),
-				Name:     r.Data.Get("name").(string),
-			})
+			if ic.meAdmin {
+				ic.Emit(&resource{
+					Resource: "databricks_permissions",
+					ID:       fmt.Sprintf("/jobs/%s", r.ID),
+					Name:     r.Data.Get("name").(string),
+				})
+			}
 			if job.SparkPythonTask != nil {
 				ic.emitIfDbfsFile(job.SparkPythonTask.PythonFile)
 				for _, p := range job.SparkPythonTask.Parameters {
@@ -305,13 +310,13 @@ var resourcesMap map[string]importable = map[string]importable{
 				if !vok || !dok {
 					continue
 				}
-				if "aws_attributes.instance_profile_arn" == k {
+				if k == "aws_attributes.instance_profile_arn" {
 					ic.Emit(&resource{
 						Resource: "databricks_instance_profile",
 						ID:       fmt.Sprintf("%s%s", value, defaultValue),
 					})
 				}
-				if "instance_pool_id" == k {
+				if k == "instance_pool_id" {
 					ic.Emit(&resource{
 						Resource: "databricks_instance_pool",
 						ID:       fmt.Sprintf("%s%s", value, defaultValue),
@@ -397,7 +402,7 @@ var resourcesMap map[string]importable = map[string]importable{
 						Resource: "databricks_group",
 						ID:       parent.Value,
 					})
-					if "direct" == parent.Type {
+					if parent.Type == "direct" {
 						ic.Emit(&resource{
 							Resource: "databricks_group_member",
 							ID:       fmt.Sprintf("%s|%s", parent.Value, g.ID),
@@ -471,7 +476,7 @@ var resourcesMap map[string]importable = map[string]importable{
 				return err
 			}
 			for _, g := range u.Groups {
-				if "direct" != g.Type {
+				if g.Type != "direct" {
 					continue
 				}
 				ic.Emit(&resource{
@@ -538,6 +543,7 @@ var resourcesMap map[string]importable = map[string]importable{
 					ic.Emit(&resource{
 						Resource: "databricks_secret_scope",
 						ID:       scope.Name,
+						Name:     scope.Name,
 					})
 					log.Printf("[INFO] Imported %d of %d secret scopes",
 						i, len(scopes))
@@ -607,32 +613,47 @@ var resourcesMap map[string]importable = map[string]importable{
 				return err
 			}
 			for mountName, source := range ic.mountMap {
-				if !strings.HasPrefix(source, "s3a://") {
+				if !strings.HasPrefix(source.URL, "s3a://") {
 					continue
 				}
 				if !ic.MatchesName(mountName) {
 					continue
 				}
+				log.Printf("[INFO] Emitting databricks_aws_s3_mount: %s",
+					source.URL)
+				attrs := map[string]string{
+					"s3_bucket_name": strings.ReplaceAll(source.URL, "s3a://", ""),
+					"mount_name":     mountName,
+				}
+				if source.InstanceProfile != "" {
+					attrs["instance_profile"] = source.InstanceProfile
+					ic.Emit(&resource{
+						Resource: "databricks_instance_profile",
+						ID:       source.InstanceProfile,
+					})
+				} else if source.ClusterID != "" {
+					attrs["cluster_id"] = source.ClusterID
+					ic.Emit(&resource{
+						Resource: "databricks_cluster",
+						ID:       source.ClusterID,
+					})
+				}
 				ic.Emit(&resource{
-					Resource: "databricks_aws_s3_mount",
 					ID:       mountName,
+					Resource: "databricks_aws_s3_mount",
+					Data: ic.Resources["databricks_aws_s3_mount"].Data(
+						&terraform.InstanceState{
+							ID:         mountName,
+							Attributes: attrs,
+						}),
 				})
 			}
 			return nil
 		},
-		Import: func(ic *importContext, r *resource) error {
-			// TODO: add instance_profile
-			bucket := strings.ReplaceAll(ic.mountMap[r.ID], "s3a://", "")
-			if err := r.Data.Set("mount_name", strings.Replace(r.ID, "/mnt/", "", 1)); err != nil {
-				return err
-			}
-			return r.Data.Set("s3_bucket_name", bucket)
-		},
 		Depends: []reference{
 			{Path: "s3_bucket_name", Resource: "aws_s3_bucket", Match: "bucket"},
 			{Path: "instance_profile", Resource: "databricks_instance_profile"},
-			// TODO: do we need it here? Can we detect what cluster was used for creaing the mount?
-			//{Path: "cluster_id", Resource: "databricks_cluster"},
+			{Path: "cluster_id", Resource: "databricks_cluster"},
 		},
 	},
 	"databricks_azure_adls_gen2_mount": {
@@ -645,8 +666,8 @@ var resourcesMap map[string]importable = map[string]importable{
 				return err
 			}
 			for mountName, source := range ic.mountMap {
-				if res := adlsGen2Regex.FindStringSubmatch(source); res == nil {
-					log.Printf("[INFO] skipping %s mounted at %s", source, mountName)
+				if res := adlsGen2Regex.FindStringSubmatch(source.URL); res == nil {
+					log.Printf("[DEBUG] skipping %s mounted at %s", source, mountName)
 					continue
 				}
 				if !ic.MatchesName(mountName) {
@@ -655,6 +676,12 @@ var resourcesMap map[string]importable = map[string]importable{
 				ic.Emit(&resource{
 					Resource: "databricks_azure_adls_gen2_mount",
 					ID:       mountName,
+					Data: ic.Resources["databricks_azure_adls_gen2_mount"].Data(
+						&terraform.InstanceState{
+							ID: mountName,
+							// don't open another command/context
+							Attributes: map[string]string{},
+						}),
 				})
 			}
 			return nil
@@ -663,9 +690,9 @@ var resourcesMap map[string]importable = map[string]importable{
 			b := body.AppendNewBlock("resource", []string{r.Resource, r.Name}).Body()
 
 			mount := ic.mountMap[r.ID]
-			res := adlsGen2Regex.FindStringSubmatch(mount)
+			res := adlsGen2Regex.FindStringSubmatch(mount.URL)
 			if res == nil {
-				return fmt.Errorf("Can't extract ADLSv2 information from string '%s'", mount)
+				return fmt.Errorf("can't extract ADLSv2 information from string '%s'", mount)
 			}
 			containerName := res[2]
 			storageAccountName := res[3]
@@ -708,7 +735,7 @@ var resourcesMap map[string]importable = map[string]importable{
 				return err
 			}
 			for mountName, source := range ic.mountMap {
-				if res := adlsGen1Regex.FindStringSubmatch(source); res == nil {
+				if res := adlsGen1Regex.FindStringSubmatch(source.URL); res == nil {
 					continue
 				}
 				if !ic.MatchesName(mountName) {
@@ -717,6 +744,12 @@ var resourcesMap map[string]importable = map[string]importable{
 				ic.Emit(&resource{
 					Resource: "databricks_azure_adls_gen1_mount",
 					ID:       mountName,
+					Data: ic.Resources["databricks_azure_adls_gen2_mount"].Data(
+						&terraform.InstanceState{
+							ID: mountName,
+							// don't open another command/context
+							Attributes: map[string]string{},
+						}),
 				})
 			}
 			return nil
@@ -725,9 +758,9 @@ var resourcesMap map[string]importable = map[string]importable{
 			b := body.AppendNewBlock("resource", []string{r.Resource, r.Name}).Body()
 
 			mount := ic.mountMap[r.ID]
-			res := adlsGen1Regex.FindStringSubmatch(mount)
+			res := adlsGen1Regex.FindStringSubmatch(mount.URL)
 			if res == nil {
-				return fmt.Errorf("Can't extract ADLSv1 information from string '%s'", mount)
+				return fmt.Errorf("can't extract ADLSv1 information from string '%s'", mount)
 			}
 			storageResourceName := res[2]
 			b.SetAttributeValue("storage_resource_name", cty.StringVal(storageResourceName))
@@ -749,6 +782,65 @@ var resourcesMap map[string]importable = map[string]importable{
 		},
 		Depends: []reference{
 			{Path: "storage_resource_name", Resource: "azurerm_data_lake_store", Match: "name"},
+		},
+	},
+	"databricks_global_init_script": {
+		Service: "workspace",
+		Name: func(d *schema.ResourceData) string {
+			name := d.Get("name").(string)
+			if name == "" {
+				return d.Id()
+			}
+			re := regexp.MustCompile(`[^0-9A-Za-z_]`)
+			return re.ReplaceAllString(name, "_")
+		},
+		List: func(ic *importContext) error {
+			globalInitScripts, err := workspace.NewGlobalInitScriptsAPI(ic.Context, ic.Client).List()
+			if err != nil {
+				return err
+			}
+			for offset, gis := range globalInitScripts {
+				ic.Emit(&resource{
+					Resource: "databricks_global_init_script",
+					ID:       gis.ScriptID,
+				})
+				log.Printf("[INFO] Scanned %d of %d clusters", offset+1, len(globalInitScripts))
+			}
+			return nil
+		},
+		Body: func(ic *importContext, body *hclwrite.Body, r *resource) error {
+			gis, err := workspace.NewGlobalInitScriptsAPI(ic.Context, ic.Client).Get(r.ID)
+			if err != nil {
+				return err
+			}
+			err = os.Mkdir(fmt.Sprintf("%s/files", ic.Directory), 0755)
+			if err != nil && !os.IsExist(err) {
+				return err
+			}
+			fileName := path.Base(r.Name)
+			local, err := os.Create(fmt.Sprintf("%s/files/gis-%s", ic.Directory, fileName))
+			if err != nil {
+				return err
+			}
+			defer local.Close()
+			fileBytes, err := base64.StdEncoding.DecodeString(gis.ContentBase64)
+			if err != nil {
+				return err
+			}
+			_, err = local.Write(fileBytes)
+			if err != nil {
+				return err
+			}
+			relativeFile := fmt.Sprintf("${path.module}/files/gis-%s", fileName)
+			b := body.AppendNewBlock("resource", []string{r.Resource, r.Name}).Body()
+			b.SetAttributeValue("name", cty.StringVal(gis.Name))
+			b.SetAttributeValue("enabled", cty.BoolVal(gis.Enabled))
+			b.SetAttributeRaw("source", hclwrite.Tokens{
+				&hclwrite.Token{Type: hclsyntax.TokenOQuote, Bytes: []byte{'"'}},
+				&hclwrite.Token{Type: hclsyntax.TokenQuotedLit, Bytes: []byte(relativeFile)},
+				&hclwrite.Token{Type: hclsyntax.TokenCQuote, Bytes: []byte{'"'}},
+			})
+			return nil
 		},
 	},
 }

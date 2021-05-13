@@ -7,8 +7,8 @@ fmt:
 	@gofmt -w $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 
 lint: vendor
-	@echo "✓ Linting source code with golangci-lint make sure you run make fmt ..."
-	@golangci-lint run --skip-dirs-use-default --timeout 5m
+	@echo "✓ Linting source code with https://staticcheck.io/ ..."
+	@staticcheck ./...
 
 test: lint
 	@echo "✓ Running tests ..."
@@ -17,8 +17,6 @@ test: lint
 coverage: test
 	@echo "✓ Opening coverage for unit tests ..."
 	@go tool cover -html=coverage.txt
-
-VERSION = 0.3.0
 
 build: vendor
 	@echo "✓ Building source code with go build ..."
@@ -67,6 +65,10 @@ test-awsst: install
 test-awsmt: install
 	@echo "✓ Running Terraform Acceptance Tests for AWS MT..."
 	@/bin/bash scripts/run.sh awsmt '^(TestAcc|TestAwsAcc)' --debug --tee
+
+test-preview: install
+	@echo "✓ Running acceptance Tests for Preview features..."
+	@/bin/bash scripts/run.sh preview '^TestPreviewAcc' --debug --tee
 
 snapshot:
 	@echo "✓ Making Snapshot ..."

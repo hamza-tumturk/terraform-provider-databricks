@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/databrickslabs/terraform-provider-databricks/common"
+	"github.com/databrickslabs/terraform-provider-databricks/compute"
 	"github.com/databrickslabs/terraform-provider-databricks/identity"
 	"github.com/databrickslabs/terraform-provider-databricks/provider"
 
@@ -60,7 +61,7 @@ type importContext struct {
 	hclFixes    []regexFix
 	allUsers    []identity.ScimUser
 	allGroups   []identity.ScimGroup
-	mountMap    map[string]string
+	mountMap    map[string]mount
 	variables   map[string]string
 
 	debug               bool
@@ -70,6 +71,14 @@ type importContext struct {
 	match               string
 	lastActiveDays      int64
 	generateDeclaration bool
+	meAdmin             bool
+	prefix              string
+}
+
+type mount struct {
+	URL             string
+	InstanceProfile string
+	ClusterID       string
 }
 
 func newImportContext(c *common.DatabricksClient) *importContext {
@@ -77,6 +86,11 @@ func newImportContext(c *common.DatabricksClient) *importContext {
 	p.TerraformVersion = "importer"
 	p.SetMeta(c)
 	ctx := context.WithValue(context.Background(), common.Provider, p)
+	c.WithCommandExecutor(func(
+		ctx context.Context,
+		c *common.DatabricksClient) common.CommandExecutor {
+		return compute.NewCommandsAPI(ctx, c)
+	})
 	return &importContext{
 		Client:      c,
 		Context:     ctx,
@@ -106,7 +120,7 @@ func newImportContext(c *common.DatabricksClient) *importContext {
 
 func (ic *importContext) Run() error {
 	if len(ic.services) == 0 {
-		return fmt.Errorf("No services to import")
+		return fmt.Errorf("no services to import")
 	}
 	log.Printf("[INFO] Importing %s module into %s directory Databricks resources of %s services",
 		ic.Module, ic.Directory, ic.services)
@@ -115,12 +129,22 @@ func (ic *importContext) Run() error {
 	if os.IsNotExist(err) {
 		err = os.MkdirAll(ic.Directory, 0755)
 		if err != nil {
-			return fmt.Errorf("Can't create directory %s", ic.Directory)
+			return fmt.Errorf("can't create directory %s", ic.Directory)
 		}
 	} else if !info.IsDir() {
-		return fmt.Errorf("The path %s is not a directory", ic.Directory)
+		return fmt.Errorf("the path %s is not a directory", ic.Directory)
 	}
-
+	usersAPI := identity.NewUsersAPI(ic.Context, ic.Client)
+	me, err := usersAPI.Me()
+	if err != nil {
+		return err
+	}
+	for _, g := range me.Groups {
+		if g.Display == "admins" {
+			ic.meAdmin = true
+			break
+		}
+	}
 	for resourceName, ir := range ic.Importables {
 		if ir.List == nil {
 			continue
@@ -135,7 +159,7 @@ func (ic *importContext) Run() error {
 		}
 	}
 	if len(ic.Scope) == 0 {
-		return fmt.Errorf("No resources to import")
+		return fmt.Errorf("no resources to import")
 	}
 	sh, err := os.OpenFile(fmt.Sprintf("%s/import.sh", ic.Directory), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
 	if err != nil {
@@ -181,14 +205,14 @@ func (ic *importContext) Run() error {
 		if ir.Body != nil {
 			err := ir.Body(ic, body, r)
 			if err != nil {
-				return err
+				log.Printf("[ERROR] %s", err.Error())
 			}
 		} else {
 			resourceBlock := body.AppendNewBlock("resource", []string{r.Resource, r.Name})
 			err := ic.dataToHcl(ir, []string{}, ic.Resources[r.Resource],
 				r.Data, resourceBlock.Body())
 			if err != nil {
-				return err
+				log.Printf("[ERROR] %s", err.Error())
 			}
 		}
 		if i%50 == 0 {
@@ -254,7 +278,7 @@ func (ic *importContext) Find(r *resource, pick string) hcl.Traversal {
 		}
 		for _, i := range sr.Instances {
 			if i.Attributes[r.Attribute].(string) == r.Value {
-				if "data" == sr.Mode {
+				if sr.Mode == "data" {
 					return hcl.Traversal{
 						hcl.TraverseRoot{Name: "data"},
 						hcl.TraverseAttr{Name: sr.Type},
@@ -336,11 +360,12 @@ func (ic *importContext) ResourceName(r *resource) string {
 	if name == "" {
 		name = r.ID
 	}
+	name = ic.prefix + name
 	name = strings.ToLower(name)
 	name = ic.regexFix(name, ic.nameFixes)
 	// this is either numeric id or all-non-ascii
-	if regexp.MustCompile(`^\d`).MatchString(name) || "" == name {
-		if "" == name {
+	if regexp.MustCompile(`^\d`).MatchString(name) || name == "" {
+		if name == "" {
 			name = r.ID
 		}
 		name = fmt.Sprintf("r%x", md5.Sum([]byte(name)))[0:12]
@@ -389,26 +414,28 @@ func (ic *importContext) Emit(r *resource) {
 			return
 		}
 	}
-	// empty data with resource schema
-	r.Data = pr.Data(&terraform.InstanceState{
-		Attributes: map[string]string{},
-		ID:         r.ID,
-	})
-	r.Data.MarkNewResource()
+	if r.Data == nil {
+		// empty data with resource schema
+		r.Data = pr.Data(&terraform.InstanceState{
+			Attributes: map[string]string{},
+			ID:         r.ID,
+		})
+		r.Data.MarkNewResource()
 
-	if pr.Read != nil {
-		if err := pr.Read(r.Data, ic.Client); err != nil {
-			log.Printf("[ERROR] Error reading %s#%s: %v", r.Resource, r.ID, err)
-			return
+		if pr.Read != nil {
+			if err := pr.Read(r.Data, ic.Client); err != nil {
+				log.Printf("[ERROR] Error reading %s#%s: %v", r.Resource, r.ID, err)
+				return
+			}
+		} else {
+			if dia := pr.ReadContext(context.Background(), r.Data, ic.Client); dia != nil {
+				log.Printf("[ERROR] Error reading %s#%s: %v", r.Resource, r.ID, dia)
+				return
+			}
 		}
-	} else {
-		if dia := pr.ReadContext(context.Background(), r.Data, ic.Client); dia != nil {
-			log.Printf("[ERROR] Error reading %s#%s: %v", r.Resource, r.ID, dia)
-			return
+		if r.Data.Id() == "" {
+			r.Data.SetId(r.ID)
 		}
-	}
-	if r.Data.Id() == "" {
-		r.Data.SetId(r.ID)
 	}
 	r.Name = ic.ResourceName(r)
 	if ir.Import != nil {
@@ -521,7 +548,7 @@ func (ic *importContext) dataToHcl(i importable, path []string,
 				}
 			}
 		default:
-			return fmt.Errorf("Unsupported schema type: %v", path)
+			return fmt.Errorf("unsupported schema type: %v", path)
 		}
 	}
 	return nil
@@ -570,7 +597,7 @@ func (ic *importContext) readListFromData(i importable, path []string, d *schema
 				toks = append(toks, hclwrite.TokensForValue(
 					cty.NumberIntVal(int64(x)))...)
 			default:
-				return fmt.Errorf("Unsupported primitive list: %#v", path)
+				return fmt.Errorf("unsupported primitive list: %#v", path)
 			}
 		}
 		toks = append(toks, &hclwrite.Token{

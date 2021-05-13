@@ -43,7 +43,7 @@ func TestAddSpManagementTokenVisitor(t *testing.T) {
 	aa := AzureAuth{}
 	r := httptest.NewRequest("GET", "/a/b/c", http.NoBody)
 	err := aa.addSpManagementTokenVisitor(r, &autorest.BearerAuthorizer{})
-	assert.EqualError(t, err, "Token provider is nil")
+	assert.EqualError(t, err, "token provider is nil")
 }
 
 func TestAddSpManagementTokenVisitor_Refreshed(t *testing.T) {
@@ -75,7 +75,7 @@ func TestAddSpManagementTokenVisitor_RefreshedError(t *testing.T) {
 		refreshMinutes: 6,
 	}
 	err := aa.addSpManagementTokenVisitor(r, autorest.NewBearerAuthorizer(&rct))
-	require.EqualError(t, err, "Cannot get access token: This is just a failing script.\n")
+	require.EqualError(t, err, "cannot get access token: This is just a failing script.\n")
 
 	err = aa.addSpManagementTokenVisitor(r, autorest.NewBasicAuthorizer("a", "b"))
 	require.Error(t, err)
@@ -83,11 +83,7 @@ func TestAddSpManagementTokenVisitor_RefreshedError(t *testing.T) {
 
 func TestGetClientSecretAuthorizer(t *testing.T) {
 	aa := AzureAuth{}
-	auth, err := aa.getClientSecretAuthorizer("x")
-	require.NotNil(t, auth)
-	require.NoError(t, err)
-
-	auth, err = aa.getClientSecretAuthorizer(AzureDatabricksResourceID)
+	auth, err := aa.getClientSecretAuthorizer(AzureDatabricksResourceID)
 	require.Nil(t, auth)
 	require.EqualError(t, err, "parameter 'clientID' cannot be empty")
 
@@ -106,7 +102,7 @@ func TestEnsureWorkspaceURL_CornerCases(t *testing.T) {
 
 	aa.databricksClient = &DatabricksClient{}
 	err = aa.ensureWorkspaceURL(context.Background(), nil)
-	assert.EqualError(t, err, "Somehow resource id is not set")
+	assert.EqualError(t, err, "somehow resource id is not set")
 
 	aa = AzureAuth{
 		Environment:      "xyz",
@@ -132,7 +128,7 @@ func TestAcquirePAT_CornerCases(t *testing.T) {
 	assert.EqualError(t, err, "DatabricksClient is not configured")
 
 	aa.databricksClient = &DatabricksClient{}
-	aa.temporaryPat = &TokenResponse{
+	aa.temporaryPat = &tokenResponse{
 		TokenValue: "...",
 	}
 	auth, rre := aa.acquirePAT(context.Background(), func(resource string) (autorest.Authorizer, error) {
